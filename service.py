@@ -1,66 +1,61 @@
-import requests
+import json
+import socket
+import threading
 
-class Service:
-    def __init__(self, ip, port, protocol):
-        self.ip = ip
-        self.port = port
-        self.protocol = protocol
-        self.url = f'{protocol}://{ip}:{port}'
+TIMEOUT = 20
+
+class ServerService:
+    def __init__(self, host, port):
+        self.client_socket = None
         self.username = None
+        self.host = host
+        self.port = port
+        self.stop_event = threading.Event()
+        # message queue
+        self.data = {}
 
-    def check_available(self, username):
-        # set timeout
-        try:
-            # send request to server using username as parameter
-            response = requests.get(f'{self.url}', params={'username': username}, timeout=200)
-            # if response is ok, return true
-            if response.ok:
-                return True
-            # else return the server response as json
-            else:
-                return response.json()
-        except Exception as e:
-            return e
+    def start(self):
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.connect((self.host, self.port))
+
+        receive_thread = threading.Thread(target=self.__start_listen__)
+        receive_thread.start()
+        return True
+
+    def stop(self):
+        self.client_socket.close()
 
     def register(self, username):
-        try:
-            response = requests.post(f'{self.url}/register', params={'username': username, 'register': True})
-            if response.ok:
-                self.username = username
-                return True
-            else:
-                return response.json()
-        except Exception as e:
-            return e
+        self.__send_data__({'username': username, 'type': 'check_available'})
+        data = self.client_socket.recv(1024)
+        self.username = username
+        received_message = json.loads(data.decode())['available']
+        return received_message
 
-    # refresh every 10 seconds, otherwise the client is considered offline
-    def keep_wake(self):
-        try:
-            response = requests.post(f'{self.url}/keep_wake', params={'username': self.username})
-            if response.ok:
-                return True
-            else:
-                return response.json()
-        except Exception as e:
-            return e
+    def keep_alive(self):
+        self.__send_data__({'username': self.username, 'type': 'heartbeat'})
+
+    def get_data(self):
+        return self.data
 
     def send_status(self, status):
-        try:
-            # send status in request body
-            response = requests.post(f'{self.url}/post_data', params={'username': self.username}, json=status)
-            if response.ok:
-                return True
-            else:
-                return response.json()
-        except Exception as e:
-            return e
+        self.__send_data__(status)
 
-    def get_status(self):
-        try:
-            response = requests.get(f'{self.url}/get_data', params={'username': self.username})
-            if response.ok:
-                return response.json()
-            else:
-                return response.json()
-        except Exception as e:
-            return e
+    def __send_data__(self, data):
+        json_data = json.dumps(data)
+        print('send: ', json_data)
+        self.client_socket.sendall(json_data.encode())
+
+    def __start_listen__(self):
+        while not self.stop_event.is_set():
+            data = self.client_socket.recv(1024)
+            if not data:
+                continue
+            received_message = data.decode()
+            print('rec: ', received_message)
+            if received_message == 'ok':
+                continue
+            self.data = json.loads(received_message)
+
+    def __del__(self):
+        self.stop()

@@ -1,10 +1,15 @@
 import numpy as np
 import requests
 
-state_url = 'http://localhost:8111/state'
-map_object_url = 'http://localhost:8111/map_obj.json'
-indicators_url = 'http://localhost:8111/indicators'
 
+state_url_local = 'http://localhost:8111/state'
+state_url = 'http://192.168.31.126:8111/state'
+map_object_url_local = 'http://localhost:8111/map_obj.json'
+map_object_url = 'http://192.168.31.126:8111/map_obj.json'
+indicators_url_local = 'http://localhost:8111/indicators'
+indicators_url = 'http://192.168.31.126:8111/indicators'
+
+TIMEOUT = 1
 
 def get_telemetry():
     state_response = requests.get(state_url)
@@ -17,7 +22,7 @@ def get_telemetry():
 
 
 def get_map_objs():
-    map_object_response = requests.get(map_object_url)
+    map_object_response = requests.get(map_object_url, timeout=TIMEOUT)
     if map_object_response.ok:
         map_objs = map_object_response.json()
         return map_objs
@@ -110,6 +115,18 @@ def start_listen(path, map_size, game_speed, update_interval):
     # update interval millisecond
     update_interval = 0.01
     coord, telemetry, attitude, earth_relative_airspeed = get_data(map_size)
+
+def get_simple_data():
+    map_obj = get_map_objs()
+    telemetry = get_telemetry()
+    # get position and direction
+    data = 0
+    for obj in map_obj:
+        if obj['icon'] == 'Player':
+            data = {key: float(value) for key, value in obj.items() if key in
+                     ['x', 'y', 'dx', 'dy']}
+    data["alt"] = telemetry['H, m']
+    return data
 
 
 if __name__ == '__main__':
