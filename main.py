@@ -8,7 +8,7 @@ mac = "192.168.31.137"
 port = 8221
 
 if __name__ == '__main__':
-    service = service.ServerService(host=local, port=port)
+    service = service.ServerService(host=remote, port=port)
     window = main_window.start(service)
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/

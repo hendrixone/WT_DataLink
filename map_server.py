@@ -1,14 +1,18 @@
 import json
 import os
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
 
-# Change to the directory where your web page files are located
-web_directory = os.getcwd()
+# 检查我们的应用是否被打包
+if getattr(sys, 'frozen', False):
+    # 如果被打包，我们使用的是相对于可执行文件的路径
+    basedir = sys._MEIPASS
+else:
+    # 如果没有被打包，我们使用的是相对于这个Python文件的路径
+    basedir = os.path.dirname(__file__)
 
-# Specify the HTML file to be served
-html_file = os.path.join(web_directory, "map.html")
-
+html_file = os.path.join(basedir, 'map.html')
 
 class LocalServer:
     def __init__(self, service, db):
