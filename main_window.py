@@ -64,6 +64,7 @@ class RegisterPage(QWidget):
     def register(self):
         username = self.username_textbox.text()
         try:
+            print('establishing connection to server')
             self.log_text.append('establishing connection to server')
             try:
                 result = self.service.start()
@@ -73,14 +74,19 @@ class RegisterPage(QWidget):
             except Exception as e:
                 self.log_text.append(str(e))
                 return
+            print('connection established!')
             self.log_text.append('connection established!')
             self.log_text.append(f'registering {username}')
+            print('registering')
             if self.service.register(username):
                 self.log_text.append(f'{username} available')
             else:
                 self.log_text.append(f'{username} already registered')
                 self.service.stop()
                 return
+            print('complete')
+            self.log_text.append('start listen!')
+            self.service.start_listen()
             self.log_text.append('switching to dashboard page')
             self.stacked_widget.setCurrentIndex(1)
             self.stacked_widget.currentWidget().start()

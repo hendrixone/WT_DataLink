@@ -18,8 +18,6 @@ class ServerService:
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.connect((self.host, self.port))
 
-        receive_thread = threading.Thread(target=self.__start_listen__)
-        receive_thread.start()
         return True
 
     def stop(self):
@@ -46,7 +44,11 @@ class ServerService:
         print('send: ', json_data)
         self.client_socket.sendall(json_data.encode())
 
-    def __start_listen__(self):
+    def start_listen(self):
+        receive_thread = threading.Thread(target=self.__listen__)
+        receive_thread.start()
+
+    def __listen__(self):
         while not self.stop_event.is_set():
             data = self.client_socket.recv(1024)
             if not data:

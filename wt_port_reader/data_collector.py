@@ -2,12 +2,12 @@ import numpy as np
 import requests
 
 
-state_url_local = 'http://localhost:8111/state'
-state_url = 'http://192.168.31.126:8111/state'
-map_object_url_local = 'http://localhost:8111/map_obj.json'
-map_object_url = 'http://192.168.31.126:8111/map_obj.json'
-indicators_url_local = 'http://localhost:8111/indicators'
-indicators_url = 'http://192.168.31.126:8111/indicators'
+state_url = 'http://localhost:8111/state'
+# state_url = 'http://192.168.31.126:8111/state'
+map_object_url = 'http://localhost:8111/map_obj.json'
+# map_object_url = 'http://192.168.31.126:8111/map_obj.json'
+indicators_url = 'http://localhost:8111/indicators'
+# indicators_url = 'http://192.168.31.126:8111/indicators'
 
 TIMEOUT = 1
 
