@@ -7,6 +7,7 @@ TIMEOUT = 10
 
 class ServerService:
     def __init__(self, host, port):
+        self.receive_thread = None
         self.client_socket = None
         self.username = None
         self.host = host
@@ -26,6 +27,7 @@ class ServerService:
         if self.client_socket is None:
             return
         self.client_socket.close()
+        self.receive_thread.join()
 
     def register(self, username):
         self.__send_data__({'username': username, 'type': 'check_available'})
@@ -53,8 +55,8 @@ class ServerService:
         self.client_socket.sendall(json_data.encode())
 
     def start_listen(self):
-        receive_thread = threading.Thread(target=self.__listen__)
-        receive_thread.start()
+        self.receive_thread = threading.Thread(target=self.__listen__)
+        self.receive_thread.start()
 
     def __listen__(self):
         while not self.stop_event.is_set():
