@@ -14,7 +14,8 @@ from overlay import overlay_window
 
 from wt_port_reader import data_collector
 
-width, height = 300, 400
+# Update interval
+UPDATE_INTERVAL = 0.1
 
 
 def start(service):
@@ -29,7 +30,7 @@ class MainWindow(QMainWindow):
 
         self.stacked_widget = QStackedWidget()
 
-        self.dashboard_page = DashboardPage(service)
+        self.dashboard_page = DashboardPage(service, self.stacked_widget)
         self.register_page = RegisterPage(service, self.dashboard_page, stacked_widget=self.stacked_widget)
 
         self.stacked_widget.addWidget(self.register_page)
@@ -61,7 +62,7 @@ class RegisterPage(QWidget):
         self.username_textbox = QLineEdit()
         self.username_textbox.setText("player 1")
 
-        self.button1 = QPushButton("Register")
+        self.button1 = QPushButton("注册")
         self.button1.clicked.connect(self.register)
 
         self.log_text = QTextEdit()
@@ -105,6 +106,7 @@ class RegisterPage(QWidget):
                 return
             self.service.start_listen()
             self.stacked_widget.setCurrentIndex(1)
+            self.stacked_widget.currentWidget().stop_event.clear()
             self.stacked_widget.currentWidget().start()
         except Exception as e:
             print(e)
@@ -126,10 +128,12 @@ class DashboardPage(QWidget):
 
     stop_event = threading.Event()
 
-    def __init__(self, service):
+    def __init__(self, service, stacked_widget):
         super().__init__()
+        self.lag_list = []
         self.service = service
         self.overlay = None
+        self.stacked_widget = stacked_widget
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
@@ -137,16 +141,18 @@ class DashboardPage(QWidget):
         self.status_text = QLabel()
         self.latency_text = QLabel()
 
-        self.return_button = QPushButton("Return")
+        self.return_button = QPushButton("终止")
         self.return_button.clicked.connect(self.return_to_register_page)
 
         layout = QVBoxLayout()
         layout.addWidget(self.status_text)
+        layout.addWidget(self.latency_text)
         layout.addWidget(self.log_text)
+        layout.addWidget(self.return_button)
         self.setLayout(layout)
 
-        self.post_data_thread = threading.Thread(target=self.start_posting_data)
-        self.heartbeat_thread = threading.Thread(target=self.heartbeat)
+        self.post_data_thread = None
+        self.heartbeat_thread = None
 
         # Update qt using signal rather than direct call
         self.update_log_signal.connect(self.__update_log__)
@@ -156,8 +162,11 @@ class DashboardPage(QWidget):
         self.status_text.setText(status)
 
     def __set_latency__(self, lag):
-        lag_string = f'延迟：{lag}ms'
-        self.latency_text.setText(lag_string)
+        self.lag_list.append(lag)
+        if len(self.lag_list) > 5:
+            self.lag_list.pop(0)
+            lag_string = f'延迟：{sum(self.lag_list) / 5}ms'
+            self.latency_text.setText(lag_string)
 
     def set_latency(self, lag):
         self.set_lag_signal.emit(lag)
@@ -169,6 +178,8 @@ class DashboardPage(QWidget):
         self.update_log_signal.emit(log)
 
     def return_to_register_page(self):
+        self.stop_all_thread()
+        self.stacked_widget.setCurrentIndex(0)
         pass
 
     def stop_all_thread(self):
@@ -176,16 +187,20 @@ class DashboardPage(QWidget):
         self.service.stop()
         self.post_data_thread.join()  # 等待post_data_thread线程结束
         self.heartbeat_thread.join()  # 等待heartbeat_thread线程结束
+        self.overlay.activated = False
+        self.overlay.update()
         pass
 
     def start(self):
         self.log(f"成功注册为 {self.service.username}")
-        self.log(f"开始监听服务器数据")
+        self.log(f"开始运行")
         # self.local_server.start()
+        self.heartbeat_thread = threading.Thread(target=self.heartbeat)
         self.heartbeat_thread.start()
         self.service.start_listen()
         print('开始接收服务器数据')
-        self.start_posting_data_thread()
+        self.post_data_thread = threading.Thread(target=self.start_posting_data)
+        self.post_data_thread.start()
         print('开始发送数据')
 
     def heartbeat(self):
@@ -197,9 +212,6 @@ class DashboardPage(QWidget):
             time.sleep(0.5)
             counter += 1
 
-    def start_posting_data_thread(self):
-        self.post_data_thread.start()
-
     def start_posting_data(self):
         while not self.stop_event.is_set():
             start_time = time.time()
@@ -209,15 +221,15 @@ class DashboardPage(QWidget):
                 self.set_status('正常运行')
             elif game_status == data_collector.GameStatus.NOT_RUNNING:
                 self.set_status('游戏未启动')
-                self.overlay.draw_player({})
+                self.overlay.activated = False
                 continue
             elif game_status == data_collector.GameStatus.MENU:
                 self.set_status('未在对局')
-                self.overlay.draw_player({})
+                self.overlay.activated = False
                 continue
             elif game_status == data_collector.GameStatus.LOADING:
                 self.set_status('正在加载')
-                self.overlay.draw_player({})
+                self.overlay.activated = False
                 continue
             elif game_status == data_collector.GameStatus.NOT_SPAWNED:
                 self.set_status('玩家载具未出生')
@@ -237,9 +249,14 @@ class DashboardPage(QWidget):
                 else:
                     players[player]['type'] = 'teammate'
 
+            self.overlay.activated = True
+
             self.draw_data(players)
 
-            time.sleep(0.10)
+            time_to_sleep = UPDATE_INTERVAL - (time.time() - start_time)
+
+            if time_to_sleep > 0:
+                time.sleep(time_to_sleep)
 
             self.set_latency(time.time() - start_time)
 

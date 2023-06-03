@@ -35,13 +35,47 @@ def get_game_window():
     return window_list[0]
 
 
+def __rotate_point__(point, origin_x, origin_y, dx, dy):
+
+    # Calculate the new coordinates after rotation
+    rotated_x = origin_x + (point.x() - origin_x) * dy - (point.y() - origin_y) * dx
+    rotated_y = origin_y + (point.x() - origin_x) * dx + (point.y() - origin_y) * dy
+
+    return QPoint(round(rotated_x), round(rotated_y))
+
+
+def __get_triangle__(x, y, dx, dy, side):
+    # Calculate the height and base of the triangle
+    height = side * 2
+    base = side
+
+    # Calculate the coordinates of the three points of the triangle
+    point1 = QPoint(round(x - (base / 2)), round(y + (height / 4)))
+    point2 = QPoint(round(x + (base / 2)), round(y + (height / 4)))
+    point3 = QPoint(round(x), round(y - (3 * height / 4)))
+
+    # Rotate the points based on dx and dy
+    rotated_point1 = __rotate_point__(point1, x, y, dx, dy)
+    rotated_point2 = __rotate_point__(point2, x, y, dx, dy)
+    rotated_point3 = __rotate_point__(point3, x, y, dx, dy)
+
+    # Create the QPolygon with the rotated points
+    triangle = QPolygon()
+    triangle.append(rotated_point1)
+    triangle.append(rotated_point2)
+    triangle.append(rotated_point3)
+
+    return triangle
+
+
 class OverlayWindow(QtWidgets.QWidget):
     # Define a signal that takes a list of players
     players_signal = QtCore.pyqtSignal(dict)
-    clear_signal = QtCore.pyqtSignal()
 
     player_color = ()
     teammate_color = ()
+
+    activated = False
 
     def __init__(self, image_buffer=None):
         super().__init__()
@@ -78,8 +112,6 @@ class OverlayWindow(QtWidgets.QWidget):
         # Connect the signal to the drawPlayers method
         self.players_signal.connect(self.__draw_players__)
 
-        self.clear_signal.connect(self.__clear__)
-
         self.show()
 
     def paintEvent(self, event=None):
@@ -87,6 +119,9 @@ class OverlayWindow(QtWidgets.QWidget):
 
         # Clear the widget with a completely transparent color
         painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 0))
+
+        if not self.activated:
+            return
 
         if len(self.players) > 0:
             # draw border for the draw area
@@ -120,7 +155,7 @@ class OverlayWindow(QtWidgets.QWidget):
             dx = status['dx']
             dy = -status['dy']
 
-            polygon = self.__get_triangle__(x, y, dx, dy, 10)
+            polygon = __get_triangle__(x, y, dx, dy, 10)
             painter.drawPolygon(polygon)
 
             if status['type'] == 'teammate':
@@ -130,51 +165,12 @@ class OverlayWindow(QtWidgets.QWidget):
                 painter.drawText(text_x, text_y, f"{name}")
                 painter.drawText(text_x + 5, text_y + 10, f"{status['altitude']}")
 
-    def __get_triangle__(self, x, y, dx, dy, side):
-        # Calculate the height and base of the triangle
-        height = side * 2
-        base = side
-
-        # Calculate the coordinates of the three points of the triangle
-        point1 = QPoint(round(x - (base / 2)), round(y + (height / 4)))
-        point2 = QPoint(round(x + (base / 2)), round(y + (height / 4)))
-        point3 = QPoint(round(x), round(y - (3 * height / 4)))
-
-        # Rotate the points based on dx and dy
-        rotated_point1 = self.__rotate_point__(point1, x, y, dx, dy)
-        rotated_point2 = self.__rotate_point__(point2, x, y, dx, dy)
-        rotated_point3 = self.__rotate_point__(point3, x, y, dx, dy)
-
-        # Create the QPolygon with the rotated points
-        triangle = QPolygon()
-        triangle.append(rotated_point1)
-        triangle.append(rotated_point2)
-        triangle.append(rotated_point3)
-
-        return triangle
-
-    def __rotate_point__(self, point, origin_x, origin_y, dx, dy):
-
-        # Calculate the new coordinates after rotation
-        rotated_x = origin_x + (point.x() - origin_x) * dy - (point.y() - origin_y) * dx
-        rotated_y = origin_y + (point.x() - origin_x) * dx + (point.y() - origin_y) * dy
-
-        return QPoint(round(rotated_x), round(rotated_y))
-
     def __draw_players__(self, players):
         self.players = players
         self.update()  # Trigger a repaint
 
     def draw_player(self, players):
         self.players_signal.emit(players)
-
-    def clear(self):
-        self.clear_signal.emit()
-
-    def __clear__(self):
-        self.players = {}
-        painter = QtGui.QPainter(self)
-        painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 0))
 
 
 if __name__ == '__main__':
