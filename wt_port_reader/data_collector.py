@@ -1,47 +1,89 @@
+from enum import Enum
+
 import numpy as np
 import requests
 
-
 state_url = 'http://localhost:8111/state'
-# state_url = 'http://192.168.31.126:8111/state'
 map_object_url = 'http://localhost:8111/map_obj.json'
-# map_object_url = 'http://192.168.31.126:8111/map_obj.json'
 indicators_url = 'http://localhost:8111/indicators'
-# indicators_url = 'http://192.168.31.126:8111/indicators'
+map_img_url = 'http://localhost:8111/map.img?gen=3'
+map_info_url = 'http://localhost:8111/map_info.json'
 
-TIMEOUT = 1
+TIMEOUT = 0.5
 
-def get_telemetry():
-    state_response = requests.get(state_url)
-    if state_response.ok:
-        state = state_response.json()
-        return {key: float(value) for key, value in state.items() if key in
-                ['H, m', 'TAS, km/h', 'AoA, deg', 'AoS, deg', 'Vy, m/s']}
+
+class GameStatus(Enum):
+    NOT_RUNNING = 0
+    MENU = 1
+    NOT_SPAWNED = 2
+    RUNNING = 3
+    LOADING = 4
+
+
+def get_raw_data(url):
+    response = requests.get(url, timeout=TIMEOUT)
+    if response.ok:
+        return response
     else:
         raise Exception("Bad Conn")
+
+
+def get_map_img():
+    return get_raw_data(map_img_url).content
+
+
+def get_state():
+    return get_raw_data(state_url).json()
+
+
+def get_indicators():
+    return get_raw_data(state_url).json()
+
+def get_map_info():
+    return get_raw_data(map_info_url).json()
 
 
 def get_map_objs():
-    map_object_response = requests.get(map_object_url, timeout=TIMEOUT)
-    if map_object_response.ok:
-        map_objs = map_object_response.json()
-        return map_objs
-    else:
-        raise Exception("Bad Conn")
+    return get_raw_data(map_object_url).json()
+
+
+def get_game_status():
+    try:
+        map_info = get_map_info()
+        if map_info['valid']:
+            map_objs = get_map_objs()
+            for obj in map_objs:
+                if obj['icon'] == "Player":
+                    return GameStatus.RUNNING
+            return GameStatus.NOT_SPAWNED
+
+        else:
+            return GameStatus.MENU
+    except requests.exceptions.ConnectionError:
+        return GameStatus.NOT_RUNNING
+    except requests.exceptions.ReadTimeout:
+        return GameStatus.LOADING
+
+
+def get_telemetry():
+    state = get_state()
+    return {key: float(value) for key, value in state.items() if key in
+            ['H, m', 'TAS, km/h', 'AoA, deg', 'AoS, deg', 'Vy, m/s']}
+
+
+def get_aircraft_type():
+    indicators = get_indicators()
+    return indicators['type']
 
 
 def get_attitude():
-    indicator_response = requests.get(indicators_url)
-    if indicator_response.ok:
-        indicators = indicator_response.json()
-        if indicators['valid'] == 'false':
-            return 0
-        indicators = {key: -float(value) for key, value in indicators.items() if key in
-                      ['aviahorizon_roll', 'aviahorizon_pitch', 'compass']}
-        indicators['compass'] = -indicators['compass']
-        return indicators
-    else:
-        raise Exception("Bad Conn")
+    indicators = get_indicators()
+    if indicators['valid'] == 'false':
+        return 0
+    indicators = {key: -float(value) for key, value in indicators.items() if key in
+                  ['aviahorizon_roll', 'aviahorizon_pitch', 'compass']}
+    indicators['compass'] = -indicators['compass']
+    return indicators
 
 
 # return the current data of the selected aircraft
@@ -111,10 +153,17 @@ def calculate_earth_relative_airspeed(telemetry, attitude, coord):
 
     return earth_relative_airspeed
 
-def start_listen(path, map_size, game_speed, update_interval):
-    # update interval millisecond
-    update_interval = 0.01
-    coord, telemetry, attitude, earth_relative_airspeed = get_data(map_size)
+
+def get_aircraft_name():
+    state = get_state()
+    return state['type']
+
+
+# def start_listen(path, map_size, game_speed, update_interval):
+#     # update interval millisecond
+#     update_interval = 0.01
+#     coord, telemetry, attitude, earth_relative_airspeed = get_data(map_size)
+
 
 def get_simple_data():
     map_obj = get_map_objs()
@@ -124,10 +173,10 @@ def get_simple_data():
     for obj in map_obj:
         if obj['icon'] == 'Player':
             data = {key: float(value) for key, value in obj.items() if key in
-                     ['x', 'y', 'dx', 'dy']}
-    data["alt"] = telemetry['H, m']
+                    ['x', 'y', 'dx', 'dy']}
+    data["altitude"] = telemetry['H, m']
     return data
 
 
 if __name__ == '__main__':
-    print("Hi")
+    print(get_game_status())

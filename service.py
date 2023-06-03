@@ -4,6 +4,7 @@ import threading
 
 TIMEOUT = 20
 
+
 class ServerService:
     def __init__(self, host, port):
         self.client_socket = None
@@ -21,6 +22,8 @@ class ServerService:
         return True
 
     def stop(self):
+        if self.client_socket is None:
+            return
         self.client_socket.close()
 
     def register(self, username):
@@ -61,3 +64,10 @@ class ServerService:
 
     def __del__(self):
         self.stop()
+
+
+if __name__ == '__main__':
+    dict = {'a': {'b': 1, 'c': 2}, 'd': {'e': 3, 'f': 4}}
+    for abc in dict:
+        print(abc)
+        print(dict[abc])

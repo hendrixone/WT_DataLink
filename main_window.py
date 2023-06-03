@@ -1,3 +1,5 @@
+import math
+import random
 import socket
 import sys
 import threading
@@ -8,6 +10,8 @@ from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QStackedWidget, QLineEdit, QPushButton, QVBoxLayout, QWidget, \
     QTextEdit, QLabel
 
+from overlay import overlay_window
+
 from map_server import LocalServer
 
 from wt_port_reader import data_collector
@@ -17,7 +21,7 @@ width, height = 300, 400
 
 def start(service):
     app = QApplication(sys.argv)
-    window = MainWindow(service)
+    main_window = MainWindow(service)
     sys.exit(app.exec_())
 
 
@@ -25,12 +29,11 @@ class MainWindow(QMainWindow):
     def __init__(self, service, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
 
-        self.service = service
-
         self.stacked_widget = QStackedWidget()
 
-        self.register_page = RegisterPage(service, stacked_widget=self.stacked_widget)
-        self.dashboard_page = DashboardPage(service, stacked_widget=self.stacked_widget, register_page=self.register_page)
+        self.dashboard_page = DashboardPage(service)
+        self.register_page = RegisterPage(service, self.dashboard_page, stacked_widget=self.stacked_widget)
+
 
         self.stacked_widget.addWidget(self.register_page)
         self.stacked_widget.addWidget(self.dashboard_page)
@@ -41,19 +44,25 @@ class MainWindow(QMainWindow):
 
 
 class RegisterPage(QWidget):
+    update_log_signal = pyqtSignal(str)
 
-    def __init__(self, service, stacked_widget):
+    def __init__(self, service, dashboard, stacked_widget):
         super().__init__()
 
+        self.overlay_window = None
         self.service = service
         self.stacked_widget = stacked_widget
+        self.dashboard = dashboard
 
         self.username_textbox = QLineEdit()
         self.username_textbox.setText("player 1")
 
         self.button1 = QPushButton("Register")
         self.button1.clicked.connect(self.register)
+
         self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.update_log_signal.connect(self.__update_log__)
 
         layout = QVBoxLayout()
         layout.addWidget(self.username_textbox)
@@ -63,51 +72,62 @@ class RegisterPage(QWidget):
 
     def register(self):
         username = self.username_textbox.text()
+
         try:
-            print('establishing connection to server')
-            self.log_text.append('establishing connection to server')
+            self.overlay_window = overlay_window.OverlayWindow()
+            self.dashboard.overlay = self.overlay_window
+        except Exception as e:
+            print(e)
+            self.log("没有找到游戏窗口，请使用中文，繁体，或英文客户端")
+            return
+
+        try:
+            print('正在连接服务器。。。')
             try:
                 result = self.service.start()
                 if result is not True:
-                    self.log_text.append(result)
+                    print("连接失败：", result)
                     return
             except Exception as e:
-                self.log_text.append(str(e))
+                print("连接失败：", str(e))
                 return
-            print('connection established!')
-            self.log_text.append('connection established!')
-            self.log_text.append(f'registering {username}')
-            print('registering')
+            print('连接成功')
+            print(f'注册为 {username}')
             if self.service.register(username):
-                self.log_text.append(f'{username} available')
+                print(f'{username} 可用')
             else:
-                self.log_text.append(f'{username} already registered')
+                print(f'{username} 已经被占用啦！')
                 self.service.stop()
                 return
-            print('complete')
-            self.log_text.append('start listen!')
+            print('开始接受服务器数据')
             self.service.start_listen()
-            self.log_text.append('switching to dashboard page')
             self.stacked_widget.setCurrentIndex(1)
             self.stacked_widget.currentWidget().start()
         except Exception as e:
             print(e)
             self.service.stop()
-            self.log_text.append(str(e))
+
+    def __update_log__(self, log):
+        self.log_text.append(log)
+
+    def log(self, log):
+        self.update_log_signal.emit(log)
 
 
 class DashboardPage(QWidget):
     update_log_signal = pyqtSignal(str)
+    set_lag_signal = pyqtSignal(float)
 
-    def __init__(self, service, stacked_widget, register_page):
+    def __init__(self, service):
         super().__init__()
         self.service = service
-        self.register_page = register_page
+        self.overlay = None
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
 
         self.status_text = QLabel()
+        self.latency_text = QLabel()
 
         self.return_button = QPushButton("Return")
         self.return_button.clicked.connect(self.return_to_register_page)
@@ -122,11 +142,20 @@ class DashboardPage(QWidget):
         self.heartbeat_thread = threading.Thread(target=self.heartbeat)
 
         # Update qt using signal rather than direct call
-        self.update_log_signal.connect(self.update_log)
+        self.update_log_signal.connect(self.__update_log__)
+        self.set_lag_signal.connect(self.__set_latency__)
 
     def set_status(self, status):
         self.status_text.setText(status)
-    def update_log(self, log):
+
+    def __set_latency__(self, lag):
+        lag_string = f'延迟：{lag}ms'
+        self.latency_text.setText(lag_string)
+
+    def set_latency(self, lag):
+        self.set_lag_signal.emit(lag)
+
+    def __update_log__(self, log):
         self.log_text.append(log)
 
     def log(self, log):
@@ -141,11 +170,17 @@ class DashboardPage(QWidget):
         pass
 
     def start(self):
-        self.log_text.setText(self.register_page.log_text.toPlainText())
-        self.local_server.start()
+        self.log(f"成功注册为 {self.service.username}")
+        self.log(f"开始监听服务器数据")
+        # self.local_server.start()
         self.heartbeat_thread.start()
-        self.log('local service started on localhost:8222')
-        self.set_status('启动成功, 浏览器访问localhost:8222')
+        self.service.start_listen()
+        print('开始接收服务器数据')
+        self.start_posting_data_thread()
+        print('开始发送数据')
+
+        # self.log('local service started on localhost:8222')
+        # self.set_status('启动成功, 浏览器访问localhost:8222')
 
     def heartbeat(self):
         while True:
@@ -156,31 +191,48 @@ class DashboardPage(QWidget):
         self.post_data_thread.start()
 
     def start_posting_data(self):
-        self.log("Starting to post data")
         while True:
             start_time = time.time()
-            time.sleep(0.25)
-            try:
-                status = data_collector.get_simple_data()
-                data = {'status': status, 'username': self.service.username, 'type': 'update_status'}
-                print(data)
-                self.service.send_status(data)
-            except socket.timeout:
-                self.log("Time out, Check is WarThunder running")
-                self.set_status('连接失败, 请检查游戏是否启动')
-            except JSONDecodeError:
-                self.log("Not in active game session")
-                self.set_status('不在飞行状态')
-            except Exception as e:
-                self.log(str(e))
-                self.set_status("您电脑开了吗？")
-            self.set_status(f'更新成功, 耗时{time.time() - start_time:.2f}秒')
 
+            game_status = data_collector.get_game_status()
+            if game_status == data_collector.GameStatus.RUNNING:
+                self.set_status('正常运行')
+            elif game_status == data_collector.GameStatus.NOT_RUNNING:
+                self.set_status('游戏未启动')
+                self.overlay.draw_player({})
+                continue
+            elif game_status == data_collector.GameStatus.MENU:
+                self.set_status('未在对局')
+                self.overlay.draw_player({})
+                continue
+            elif game_status == data_collector.GameStatus.LOADING:
+                self.set_status('正在加载')
+                self.overlay.draw_player({})
+                continue
+            elif game_status == data_collector.GameStatus.NOT_SPAWNED:
+                self.set_status('玩家载具未出生')
+                continue
+            data = data_collector.get_simple_data()
+            data = {'status': data, 'username': self.service.username, 'type': 'update_status'}
+            # print(data)
+            self.service.send_status(data)
 
+            players = self.service.get_data()
+            players[self.service.username] = data['status']
 
-    def start_receiving_data(self):
-        self.log("Starting to recieve data")
-        while True:
-            data = self.service.get_data()
-            self.log(data)
-            time.sleep(0.25)
+            for player in players:
+                if player == self.service.username:
+                    players[player]['type'] = 'player'
+                    continue
+                else:
+                    players[player]['type'] = 'teammate'
+
+            self.draw_data(players)
+
+            time.sleep(0.10)
+
+            self.set_latency(time.time() - start_time)
+
+    def draw_data(self, players):
+        self.overlay.draw_player(players)
+

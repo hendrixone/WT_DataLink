@@ -4,6 +4,8 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
 
+# 暂时弃置
+
 # 检查我们的应用是否被打包
 if getattr(sys, 'frozen', False):
     # 如果被打包，我们使用的是相对于可执行文件的路径
@@ -13,6 +15,7 @@ else:
     basedir = os.path.dirname(__file__)
 
 html_file = os.path.join(basedir, 'map.html')
+
 
 class LocalServer:
     def __init__(self, service, db):
@@ -57,7 +60,7 @@ class pageServe(SimpleHTTPRequestHandler):
 class mapServe(BaseHTTPRequestHandler):
     # Create a custom request handler by subclassing BaseHTTPRequestHandler
     # add a constructor to store the local_server reference
-    def __init__(self,local_server, *args, **kwargs):
+    def __init__(self, local_server, *args, **kwargs):
         self.local_server = local_server
         # call super's init
         super().__init__(*args, **kwargs)
