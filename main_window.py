@@ -12,8 +12,6 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QStackedWidget, QLineEdit
 
 from overlay import overlay_window
 
-from map_server import LocalServer
-
 from wt_port_reader import data_collector
 
 width, height = 300, 400
@@ -34,13 +32,19 @@ class MainWindow(QMainWindow):
         self.dashboard_page = DashboardPage(service)
         self.register_page = RegisterPage(service, self.dashboard_page, stacked_widget=self.stacked_widget)
 
-
         self.stacked_widget.addWidget(self.register_page)
         self.stacked_widget.addWidget(self.dashboard_page)
 
         self.setCentralWidget(self.stacked_widget)
 
         self.show()
+
+    def closeEvent(self, event):
+        self.dashboard_page.stop_all_thread()  # 停止线程
+        event.accept()
+        print('关闭主窗口')
+        self.dashboard_page.close()
+        self.register_page.close()
 
 
 class RegisterPage(QWidget):
@@ -73,12 +77,13 @@ class RegisterPage(QWidget):
     def register(self):
         username = self.username_textbox.text()
 
+        # Start the overlay window
         try:
             self.overlay_window = overlay_window.OverlayWindow()
             self.dashboard.overlay = self.overlay_window
         except Exception as e:
             print(e)
-            self.log("没有找到游戏窗口，请使用中文，繁体，或英文客户端")
+            self.log(str(e))
             return
 
         try:
@@ -92,14 +97,12 @@ class RegisterPage(QWidget):
                 print("连接失败：", str(e))
                 return
             print('连接成功')
-            print(f'注册为 {username}')
             if self.service.register(username):
                 print(f'{username} 可用')
             else:
                 print(f'{username} 已经被占用啦！')
                 self.service.stop()
                 return
-            print('开始接受服务器数据')
             self.service.start_listen()
             self.stacked_widget.setCurrentIndex(1)
             self.stacked_widget.currentWidget().start()
@@ -113,10 +116,15 @@ class RegisterPage(QWidget):
     def log(self, log):
         self.update_log_signal.emit(log)
 
+    def closeEvent(self, event):
+        print('关闭注册窗口')
+
 
 class DashboardPage(QWidget):
     update_log_signal = pyqtSignal(str)
     set_lag_signal = pyqtSignal(float)
+
+    stop_event = threading.Event()
 
     def __init__(self, service):
         super().__init__()
@@ -137,7 +145,6 @@ class DashboardPage(QWidget):
         layout.addWidget(self.log_text)
         self.setLayout(layout)
 
-        self.local_server = LocalServer(service, self)
         self.post_data_thread = threading.Thread(target=self.start_posting_data)
         self.heartbeat_thread = threading.Thread(target=self.heartbeat)
 
@@ -162,11 +169,13 @@ class DashboardPage(QWidget):
         self.update_log_signal.emit(log)
 
     def return_to_register_page(self):
-        # TODO terminate all threads
         pass
 
     def stop_all_thread(self):
-        # TODO
+        self.stop_event.set()  # 设置stop_event，使得线程退出循环
+        self.service.stop()
+        self.post_data_thread.join()  # 等待post_data_thread线程结束
+        self.heartbeat_thread.join()  # 等待heartbeat_thread线程结束
         pass
 
     def start(self):
@@ -179,19 +188,20 @@ class DashboardPage(QWidget):
         self.start_posting_data_thread()
         print('开始发送数据')
 
-        # self.log('local service started on localhost:8222')
-        # self.set_status('启动成功, 浏览器访问localhost:8222')
-
     def heartbeat(self):
-        while True:
-            self.service.keep_alive()
-            time.sleep(5)
+        counter = 0
+        while not self.stop_event.is_set():
+            if counter == 5:
+                self.service.keep_alive()
+                counter = 0
+            time.sleep(0.5)
+            counter += 1
 
     def start_posting_data_thread(self):
         self.post_data_thread.start()
 
     def start_posting_data(self):
-        while True:
+        while not self.stop_event.is_set():
             start_time = time.time()
 
             game_status = data_collector.get_game_status()
@@ -235,4 +245,8 @@ class DashboardPage(QWidget):
 
     def draw_data(self, players):
         self.overlay.draw_player(players)
+
+    def closeEvent(self, event):
+        print('关闭窗口')
+        self.overlay.close()
 

@@ -2,7 +2,7 @@ import json
 import socket
 import threading
 
-TIMEOUT = 20
+TIMEOUT = 10
 
 
 class ServerService:
@@ -22,6 +22,7 @@ class ServerService:
         return True
 
     def stop(self):
+        self.stop_event.set()
         if self.client_socket is None:
             return
         self.client_socket.close()
@@ -40,11 +41,15 @@ class ServerService:
         return self.data
 
     def send_status(self, status):
-        self.__send_data__(status)
+        try:
+            self.__send_data__(status)
+        except Exception as e:
+            print(e)
+            self.start()
 
     def __send_data__(self, data):
         json_data = json.dumps(data)
-        print('send: ', json_data)
+        # print('send: ', json_data)
         self.client_socket.sendall(json_data.encode())
 
     def start_listen(self):
@@ -53,14 +58,17 @@ class ServerService:
 
     def __listen__(self):
         while not self.stop_event.is_set():
-            data = self.client_socket.recv(1024)
-            if not data:
-                continue
-            received_message = data.decode()
-            print('rec: ', received_message)
-            if received_message == 'ok':
-                continue
-            self.data = json.loads(received_message)
+            try:
+                data = self.client_socket.recv(1024)
+                if not data:
+                    continue
+                received_message = data.decode()
+                # print('rec: ', received_message)
+                if received_message == 'ok':
+                    continue
+                self.data = json.loads(received_message)
+            except ConnectionAbortedError:
+                break
 
     def __del__(self):
         self.stop()

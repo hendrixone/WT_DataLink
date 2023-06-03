@@ -1,10 +1,9 @@
 import ctypes
-import math
 from ctypes.wintypes import RECT
 
 from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQt5.QtCore import QThread, pyqtSignal, QObject, QTimer, QPointF, QPoint
-from PyQt5.QtGui import QPixmap, QPainter, QPolygon, QPolygonF, QColor, QVector2D
+from PyQt5.QtCore import QPoint
+from PyQt5.QtGui import QPixmap, QPolygon
 
 
 def get_game_window():
@@ -29,6 +28,9 @@ def get_game_window():
 
         # Find the next window
         hwnd = ctypes.windll.user32.FindWindowExW(None, hwnd, None, None)
+
+    print('发现游戏窗口：')
+    print(window_list)
 
     return window_list[0]
 
@@ -121,11 +123,12 @@ class OverlayWindow(QtWidgets.QWidget):
             polygon = self.__get_triangle__(x, y, dx, dy, 10)
             painter.drawPolygon(polygon)
 
-            # Draw player name and altitude
-            text_x = int(x + 10)
-            text_y = int(y)
-            painter.drawText(text_x, text_y, f"{name}")
-            painter.drawText(text_x + 5, text_y + 10, f"{status['altitude']}")
+            if status['type'] == 'teammate':
+                # Draw player name and altitude
+                text_x = int(x + 10)
+                text_y = int(y)
+                painter.drawText(text_x, text_y, f"{name}")
+                painter.drawText(text_x + 5, text_y + 10, f"{status['altitude']}")
 
     def __get_triangle__(self, x, y, dx, dy, side):
         # Calculate the height and base of the triangle
