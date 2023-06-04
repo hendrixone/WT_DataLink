@@ -1,125 +1,10 @@
-import math
-import random
-import socket
-import sys
 import threading
 import time
-from json import JSONDecodeError
 
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QApplication, QMainWindow, QStackedWidget, QLineEdit, QPushButton, QVBoxLayout, QWidget, \
-    QTextEdit, QLabel
-
-from overlay import overlay_window
+from PyQt5.QtWidgets import QTextEdit, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from wt_port_reader import data_collector
-
-# Update interval
-UPDATE_INTERVAL = 0.1
-
-
-def start(service):
-    app = QApplication(sys.argv)
-    main_window = MainWindow(service)
-    sys.exit(app.exec_())
-
-
-class MainWindow(QMainWindow):
-    def __init__(self, service, *args, **kwargs):
-        super(MainWindow, self).__init__(*args, **kwargs)
-
-        self.stacked_widget = QStackedWidget()
-
-        self.dashboard_page = DashboardPage(service, self.stacked_widget)
-        self.register_page = RegisterPage(service, self.dashboard_page, stacked_widget=self.stacked_widget)
-
-        self.stacked_widget.addWidget(self.register_page)
-        self.stacked_widget.addWidget(self.dashboard_page)
-
-        self.setCentralWidget(self.stacked_widget)
-
-        self.show()
-
-    def closeEvent(self, event):
-        self.dashboard_page.stop_all_thread()  # 停止线程
-        event.accept()
-        print('关闭主窗口')
-        self.dashboard_page.close()
-        self.register_page.close()
-
-
-class RegisterPage(QWidget):
-    update_log_signal = pyqtSignal(str)
-
-    def __init__(self, service, dashboard, stacked_widget):
-        super().__init__()
-
-        self.overlay_window = None
-        self.service = service
-        self.stacked_widget = stacked_widget
-        self.dashboard = dashboard
-
-        self.username_textbox = QLineEdit()
-        self.username_textbox.setText("player 1")
-
-        self.button1 = QPushButton("注册")
-        self.button1.clicked.connect(self.register)
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.update_log_signal.connect(self.__update_log__)
-
-        layout = QVBoxLayout()
-        layout.addWidget(self.username_textbox)
-        layout.addWidget(self.button1)
-        layout.addWidget(self.log_text)
-        self.setLayout(layout)
-
-    def register(self):
-        username = self.username_textbox.text()
-
-        # Start the overlay window
-        try:
-            self.overlay_window = overlay_window.OverlayWindow()
-            self.dashboard.overlay = self.overlay_window
-        except Exception as e:
-            print(e)
-            self.log(str(e))
-            return
-
-        try:
-            print('正在连接服务器。。。')
-            try:
-                result = self.service.start()
-                if result is not True:
-                    print("连接失败：", result)
-                    return
-            except Exception as e:
-                print("连接失败：", str(e))
-                return
-            print('连接成功')
-            if self.service.register(username):
-                print(f'{username} 可用')
-            else:
-                print(f'{username} 已经被占用啦！')
-                self.service.stop()
-                return
-            self.service.start_listen()
-            self.stacked_widget.setCurrentIndex(1)
-            self.stacked_widget.currentWidget().stop_event.clear()
-            self.stacked_widget.currentWidget().start()
-        except Exception as e:
-            print(e)
-            self.service.stop()
-
-    def __update_log__(self, log):
-        self.log_text.append(log)
-
-    def log(self, log):
-        self.update_log_signal.emit(log)
-
-    def closeEvent(self, event):
-        print('关闭注册窗口')
 
 
 class DashboardPage(QWidget):
@@ -266,4 +151,3 @@ class DashboardPage(QWidget):
     def closeEvent(self, event):
         print('关闭窗口')
         self.overlay.close()
-

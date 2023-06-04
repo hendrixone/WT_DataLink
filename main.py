@@ -2,7 +2,7 @@ import queue
 import threading
 import time
 
-import main_window
+from gui import main_window
 import service
 from overlay import overlay_window
 
