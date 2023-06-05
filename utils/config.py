@@ -12,3 +12,17 @@ def read_config_from_file(config_file):
     with open(config_file, 'r') as f:
         config = json.load(f)
     return config
+
+
+class Config:
+    def __init__(self):
+        self.active_map = True
+        self.active_hmd = False
+
+        self.map_size = 20
+        self.zoom = 1
+
+        self.x = 50
+        self.y = 300
+
+        self.player_center = False

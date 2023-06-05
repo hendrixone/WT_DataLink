@@ -8,12 +8,12 @@ from overlay import overlay_window
 class RegisterPage(QWidget):
     update_log_signal = pyqtSignal(str)
 
-    def __init__(self, service, dashboard, stacked_widget, main_window):
+    def __init__(self, service, dashboard, stacked_widget, main_window, overlay):
         super().__init__()
 
         self.main_window = main_window
 
-        self.overlay_window = None
+        self.overlay_window = overlay
         self.service = service
         self.stacked_widget = stacked_widget
         self.dashboard = dashboard
@@ -39,16 +39,6 @@ class RegisterPage(QWidget):
 
     def register(self):
         username = self.username_textbox.text()
-
-        # Start the overlay window
-        try:
-            self.overlay_window = overlay_window.OverlayWindow()
-            self.dashboard.overlay = self.overlay_window
-        except Exception as e:
-            print(e)
-            self.log(str(e))
-            return
-
         try:
             print('正在连接服务器。。。')
             try:
@@ -72,8 +62,9 @@ class RegisterPage(QWidget):
             self.service.start_listen()
             self.stacked_widget.setCurrentWidget(self.dashboard)
             self.stacked_widget.currentWidget().stop_event.clear()
-            self.stacked_widget.currentWidget().start()
-            self.main_window.set_toolbars_visibility(True)
+            self.stacked_widget.currentWidget().log(f"成功注册为 {self.service.username}")
+            self.main_window.toolbar.show()
+            self.overlay_window.init_gui()
 
         except Exception as e:
             print(e)

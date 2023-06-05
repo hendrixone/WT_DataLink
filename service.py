@@ -74,10 +74,3 @@ class ServerService:
 
     def __del__(self):
         self.stop()
-
-
-if __name__ == '__main__':
-    dict = {'a': {'b': 1, 'c': 2}, 'd': {'e': 3, 'f': 4}}
-    for abc in dict:
-        print(abc)
-        print(dict[abc])

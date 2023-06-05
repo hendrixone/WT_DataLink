@@ -1,4 +1,6 @@
 import ctypes
+import threading
+import time
 from ctypes.wintypes import RECT
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -22,7 +24,8 @@ def get_game_window():
             # Get window position and size
             rect = RECT()
             ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-            window = {'left': rect.left, 'top': rect.top, 'right': rect.right, 'bottom': rect.bottom, 'width': rect.right - rect.left, 'height': rect.bottom - rect.top, 'title': title_buffer.value}
+            window = {'left': rect.left, 'top': rect.top, 'right': rect.right, 'bottom': rect.bottom,
+                      'width': rect.right - rect.left, 'height': rect.bottom - rect.top, 'title': title_buffer.value}
 
             window_list.append(window)
 
@@ -31,6 +34,9 @@ def get_game_window():
 
     print('发现游戏窗口：')
     print(window_list)
+
+    if not window_list:
+        return None
 
     return window_list[0]
 
@@ -75,16 +81,24 @@ class OverlayWindow(QtWidgets.QWidget):
     player_color = ()
     teammate_color = ()
 
-    activated = False
+    activate_map = False
 
-    def __init__(self, image_buffer=None):
+    activate_hmd = False
+
+    base_size = 300
+
+    def __init__(self, config, image_buffer=None):
         super().__init__()
 
-        self.zoom_level = 1.0
-        self.setWindowFlags(
-            QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool | QtCore.Qt.X11BypassWindowManagerHint)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.preview_render_thread = None
+        self.players = {}
+        self.preview = False
+        self.config = config
+
+        self.game_window = None
+        self.map_size = self.base_size
+        self.map_draw_area = None
+        self.zoom_level = config.zoom
 
         if image_buffer is not None:
             self.pixmap = QPixmap()
@@ -92,22 +106,26 @@ class OverlayWindow(QtWidgets.QWidget):
         else:
             self.pixmap = None
 
+    def init_gui(self):
+        self.setWindowFlags(
+            QtCore.Qt.WindowStaysOnTopHint |
+            QtCore.Qt.FramelessWindowHint |
+            QtCore.Qt.Tool |
+            QtCore.Qt.X11BypassWindowManagerHint)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+
         # get screen size
         screen_geometry = QtWidgets.QApplication.desktop().screenGeometry()
         self.setGeometry(screen_geometry)
-
-        self.map_size = 300
 
         self.game_window = get_game_window()
         if self.game_window is None:
             raise Exception('Game window not found')
         # set the drawing area on the right side of game window
-        self.draw_area = QtCore.QRect(self.game_window['left'] + self.game_window['width'] - 10 - self.map_size - 50,
-                                      self.game_window['top'] + 300, self.map_size, self.map_size)
-        # self.draw_area = QtCore.QRect(1000, 200, 300, 300)
-
-        # players to be drawn
-        self.players = {}
+        self.map_draw_area = QtCore.QRect(
+            self.game_window['left'] + self.game_window['width'] - self.map_size - self.config.x,
+            self.game_window['top'] + self.config.y, self.map_size, self.map_size)
 
         # Connect the signal to the drawPlayers method
         self.players_signal.connect(self.__draw_players__)
@@ -120,50 +138,53 @@ class OverlayWindow(QtWidgets.QWidget):
         # Clear the widget with a completely transparent color
         painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 0))
 
-        if not self.activated:
-            return
+        if self.activate_map or self.preview:
 
-        if len(self.players) > 0:
             # draw border for the draw area
             painter.setPen(QtGui.QPen(QtGui.QColor(100, 100, 100, 255), 1))
-            painter.drawRect(self.draw_area)
+            painter.drawRect(self.map_draw_area)
 
             # draw grid for the draw area 1 to 10 and A to J
             painter.setPen(QtGui.QPen(QtGui.QColor(100, 100, 100, 255), 1))
             for i in range(1, 11):
-                x = self.draw_area.x() + i * self.draw_area.width() / 10
-                painter.drawLine(int(x), self.draw_area.y(), int(x), self.draw_area.y() + self.draw_area.height())
+                x = self.map_draw_area.x() + i * self.map_draw_area.width() / 10
+                painter.drawLine(int(x), self.map_draw_area.y(), int(x),
+                                 self.map_draw_area.y() + self.map_draw_area.height())
             for i in range(1, 11):
-                y = self.draw_area.y() + i * self.draw_area.height() / 10
-                painter.drawLine(self.draw_area.x(), int(y), self.draw_area.x() + self.draw_area.width(), int(y))
+                y = self.map_draw_area.y() + i * self.map_draw_area.height() / 10
+                painter.drawLine(self.map_draw_area.x(), int(y),
+                                 self.map_draw_area.x() + self.map_draw_area.width(), int(y))
 
-        # Draw the image
-        if self.pixmap is not None:
-            painter.drawPixmap(self.draw_area, self.pixmap)
+            # Draw the image
+            if self.pixmap is not None:
+                painter.drawPixmap(self.map_draw_area, self.pixmap)
 
-        for player in self.players:
+            for player in self.players:
+                name = player
+                status = self.players[player]
+                if status['type'] == 'player':
+                    painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 255), 2))
+                elif status['type'] == 'teammate':
+                    painter.setPen(QtGui.QPen(QtGui.QColor(0, 200, 0, 255), 2))
 
-            name = player
-            status = self.players[player]
-            if status['type'] == 'player':
-                painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 255), 2))
-            elif status['type'] == 'teammate':
-                painter.setPen(QtGui.QPen(QtGui.QColor(0, 200, 0, 255), 2))
+                x = status['x'] * self.map_draw_area.width() + self.map_draw_area.x()
+                y = status['y'] * self.map_draw_area.height() + self.map_draw_area.y()
+                dx = status['dx']
+                dy = -status['dy']
 
-            x = status['x'] * self.draw_area.width() + self.draw_area.x()
-            y = status['y'] * self.draw_area.height() + self.draw_area.y()
-            dx = status['dx']
-            dy = -status['dy']
+                polygon = __get_triangle__(x, y, dx, dy, 10)
+                painter.drawPolygon(polygon)
 
-            polygon = __get_triangle__(x, y, dx, dy, 10)
-            painter.drawPolygon(polygon)
+                if status['type'] == 'teammate':
+                    # Draw player name and altitude
+                    text_x = int(x + 10)
+                    text_y = int(y)
+                    painter.drawText(text_x, text_y, f"{name}")
+                    painter.drawText(text_x + 5, text_y + 10, f"{status['altitude']}")
 
-            if status['type'] == 'teammate':
-                # Draw player name and altitude
-                text_x = int(x + 10)
-                text_y = int(y)
-                painter.drawText(text_x, text_y, f"{name}")
-                painter.drawText(text_x + 5, text_y + 10, f"{status['altitude']}")
+        if self.activate_hmd:
+            # TODO
+            pass
 
     def __draw_players__(self, players):
         self.players = players
@@ -171,6 +192,36 @@ class OverlayWindow(QtWidgets.QWidget):
 
     def draw_player(self, players):
         self.players_signal.emit(players)
+
+    def preview_render(self):
+        while self.preview:
+            time.sleep(0.1)
+            self.update()
+
+    def preview_map(self):
+        self.activate_hmd = False
+        self.preview = True
+        self.preview_render_thread = threading.Thread(target=self.preview_render)
+        self.preview_render_thread.start()
+        self.show()
+
+    def deactivate_preview(self):
+        self.activate_hmd = self.config.active_hmd
+        self.preview = False
+        self.update()
+        self.hide()
+
+    def update_map_size(self, factor):
+        self.map_size = int(self.base_size * factor)
+        self.map_draw_area = QtCore.QRect(
+            self.map_draw_area.x(), self.map_draw_area.y(), self.map_size, self.map_size)
+        self.update()
+
+    def update_map_position(self, x, y):
+        self.map_draw_area = QtCore.QRect(
+            self.game_window['left'] + self.game_window['width'] - self.map_size - x,
+            self.game_window['top'] + y, self.map_size, self.map_size)
+        self.update()
 
 
 if __name__ == '__main__':

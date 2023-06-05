@@ -16,13 +16,13 @@ class DashboardPage(QWidget):
 
     stop_event = threading.Event()
 
-    def __init__(self, service, stacked_widget, main_window):
+    def __init__(self, service, stacked_widget, main_window, overlay):
         super().__init__()
 
         self.main_window = main_window
         self.lag_list = []
         self.service = service
-        self.overlay = None
+        self.overlay = overlay
         self.stacked_widget = stacked_widget
 
         self.log_text = QTextEdit()
@@ -31,13 +31,21 @@ class DashboardPage(QWidget):
         self.status_text = QLabel()
         self.latency_text = QLabel()
 
-        self.return_button = QPushButton("终止")
+        self.active_button = QPushButton("开始运行")
+        self.active_button.clicked.connect(self.start)
+        self.deactive_button = QPushButton("停止")
+        self.deactive_button.clicked.connect(self.stop)
+        self.deactive_button.hide()
+
+        self.return_button = QPushButton("返回注册页面")
         self.return_button.clicked.connect(self.return_to_register_page)
 
         layout = QVBoxLayout()
         layout.addWidget(self.status_text)
         layout.addWidget(self.latency_text)
         layout.addWidget(self.log_text)
+        layout.addWidget(self.active_button)
+        layout.addWidget(self.deactive_button)
         layout.addWidget(self.return_button)
         self.setLayout(layout)
 
@@ -55,7 +63,7 @@ class DashboardPage(QWidget):
         self.lag_list.append(lag)
         if len(self.lag_list) > 5:
             self.lag_list.pop(0)
-            lag_string = f'延迟：{sum(self.lag_list) / 5}ms'
+            lag_string = f'延迟：{round(sum(self.lag_list) / 5 * 100)}ms'
             self.latency_text.setText(lag_string)
 
     def set_latency(self, lag):
@@ -75,16 +83,16 @@ class DashboardPage(QWidget):
         pass
 
     def stop_all_thread(self):
-        self.stop_event.set()  # 设置stop_event，使得线程退出循环
-        self.service.stop()
-        self.post_data_thread.join()  # 等待post_data_thread线程结束
-        self.heartbeat_thread.join()  # 等待heartbeat_thread线程结束
-        self.overlay.activated = False
-        self.overlay.update()
-        pass
+        try:
+            self.stop_event.set()  # 设置stop_event，使得线程退出循环
+            self.service.stop()
+            self.post_data_thread.join()  # 等待post_data_thread线程结束
+            self.heartbeat_thread.join()  # 等待heartbeat_thread线程结束
+            self.overlay.hide()
+        except Exception as e:
+            print(e)
 
     def start(self):
-        self.log(f"成功注册为 {self.service.username}")
         self.log(f"开始运行")
         # self.local_server.start()
         self.heartbeat_thread = threading.Thread(target=self.heartbeat)
@@ -94,6 +102,21 @@ class DashboardPage(QWidget):
         self.post_data_thread = threading.Thread(target=self.start_posting_data)
         self.post_data_thread.start()
         print('开始发送数据')
+        self.deactive_button.show()
+        self.active_button.hide()
+
+        print('取消layout的预览')
+        layout_page = self.stacked_widget.widget(3)
+        layout_page.deactivate_preview()
+
+    def stop(self):
+        self.stop_all_thread()
+        self.deactive_button.hide()
+        self.active_button.show()
+        self.log(f"停止运行")
+
+        layout_page = self.stacked_widget.widget(3)
+        layout_page.activate_preview()
 
     def heartbeat(self):
         counter = 0
@@ -113,15 +136,15 @@ class DashboardPage(QWidget):
                 self.set_status('正常运行')
             elif game_status == data_collector.GameStatus.NOT_RUNNING:
                 self.set_status('游戏未启动')
-                self.overlay.activated = False
+                self.overlay.activate_map = False
                 continue
             elif game_status == data_collector.GameStatus.MENU:
                 self.set_status('未在对局')
-                self.overlay.activated = False
+                self.overlay.activate_map = False
                 continue
             elif game_status == data_collector.GameStatus.LOADING:
                 self.set_status('正在加载')
-                self.overlay.activated = False
+                self.overlay.activate_map = False
                 continue
             elif game_status == data_collector.GameStatus.NOT_SPAWNED:
                 self.set_status('玩家载具未出生')
@@ -141,7 +164,7 @@ class DashboardPage(QWidget):
                 else:
                     players[player]['type'] = 'teammate'
 
-            self.overlay.activated = True
+            self.overlay.activate_map = True
 
             self.draw_data(players)
 
