@@ -6,6 +6,9 @@ from PyQt5.QtWidgets import QTextEdit, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from wt_port_reader import data_collector
 
+# Update interval
+UPDATE_INTERVAL = 0.1
+
 
 class DashboardPage(QWidget):
     update_log_signal = pyqtSignal(str)
@@ -13,8 +16,10 @@ class DashboardPage(QWidget):
 
     stop_event = threading.Event()
 
-    def __init__(self, service, stacked_widget):
+    def __init__(self, service, stacked_widget, main_window):
         super().__init__()
+
+        self.main_window = main_window
         self.lag_list = []
         self.service = service
         self.overlay = None
@@ -64,7 +69,9 @@ class DashboardPage(QWidget):
 
     def return_to_register_page(self):
         self.stop_all_thread()
+        self.main_window.set_toolbars_visibility(False)
         self.stacked_widget.setCurrentIndex(0)
+        self.log_text.clear()
         pass
 
     def stop_all_thread(self):
