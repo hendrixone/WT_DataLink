@@ -6,7 +6,32 @@
 
 ## 效果:
 
-游戏内显示实时队友位置，通过地图形式
+游戏内显示实时队友位置，通过窗口化游戏覆盖的地图形式
 
-游戏内用在屏幕上将队友标记
+画饼：使用类似于真实飞机头显的方式将队友位置标记在屏幕空间上（开发中）
 
+## 框架
+可视化：PyQt5
+exe打包：pyinstaller
+
+## 使用方法
+
+建议先创建虚拟环境
+
+1.安装依赖
+```bash
+python -m pip install -r requirements.txt
+```
+
+2.修改main.py中的服务器地址
+
+3.运行
+```bash
+python main.py
+```
+
+## 打包
+
+```bash
+pyinstaller -F main.spec
+```
